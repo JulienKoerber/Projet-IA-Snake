@@ -2,47 +2,88 @@ import turtle
 import time
 import random
 
-delay = 0.1
+delay = 0.05
 
 # Scores
 score = 0
-high_score = 0
+# Charger le high score depuis un fichier externe s'il existe
+try:
+    with open("highscore.txt", "r") as f:
+        high_score = int(f.read())
+except:
+    high_score = 0
 
-# Créer la fenêtre (Fond sombre pour un look plus moderne)
+# Créer la fenêtre
 wn = turtle.Screen()
-wn.title("Snake Deluxe")
-wn.bgcolor("#1e1e2e")
+wn.title("Jeu Snake")
+wn.bgcolor("#aad751")  # Couleur de fond principale (vert clair)
 wn.setup(width=600, height=600)
 wn.tracer(0)
 
-# Tête du serpent (Forme ronde, couleur vive)
+# Dessiner le damier (la grille de la map)
+grid_pen = turtle.Turtle()
+grid_pen.speed(0)
+grid_pen.hideturtle()
+
+def draw_grid():
+    # Taille de la map : de -300 à 300 (soit 600x600), avec des carreaux de 20x20
+    grid_pen.up()
+    
+    for x in range(-290, 300, 20):
+        for y in range(-290, 300, 20):
+            grid_pen.goto(x, y)
+            grid_pen.down()
+            grid_pen.shape("square")
+            grid_pen.shapesize(1, 1) # Un carré de 20x20 pixels
+            # Alternance basée sur la position pour créer l'effet damier
+            if (x // 20 + y // 20) % 2 == 0:
+                grid_pen.color("#a2d149") # Vert normal
+            else:
+                grid_pen.color("#aad751") # Vert clair
+            grid_pen.stamp()
+            grid_pen.up()
+
+# Dessiner la grille au démarrage
+draw_grid()
+
+# Initialisation de la liste des segments avant de créer les segments de base
+segments = []
+
+# Tête du serpent (Vert foncé classique)
 head = turtle.Turtle()
 head.speed(0)
-head.shape("circle")
-head.color("#a6e3a1")
+head.shape("square")
+head.color("#388a34")
 head.penup()
 head.goto(0,0)
 head.direction = "stop"
 
-# Nourriture (Un cercle rouge vif)
+for _ in range(2):
+    seg = turtle.Turtle()
+    seg.speed(0)
+    seg.shape("square")
+    seg.color("#4caf50")
+    seg.penup()
+    seg.goto(0, -20 * (len(segments) + 1))  # Alignés en dessous de la tête
+    segments.append(seg)
+
+# Nourriture (Une pomme rouge)
 food = turtle.Turtle()
 food.speed(0)
-food.shape("circle")
-food.color("#f38ba8")
+food.shape("square") # Souvent carré ou rond, carré fait très rétro
+food.color("#e74c3c")
 food.penup()
 food.goto(0,100)
 
-segments = []
-
-# Affichage du score (En blanc pour être lisible sur fond sombre)
+# Affichage du score (En vert très foncé pour contraster avec le fond)
 pen = turtle.Turtle()
 pen.speed(0)
 pen.shape("square")
-pen.color("#cdd6f4")
+pen.color("#2c5e1a")
 pen.penup()
 pen.hideturtle()
 pen.goto(0, 260)
-pen.write("Score: 0  High Score: 0", align="center", font=("Courier", 20, "bold"))
+pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 18, "bold"))
 
 # Déplacements
 def go_up():
@@ -64,19 +105,19 @@ def go_right():
 def move():
     if head.direction == "up":
         y = head.ycor()
-        head.sety(y + 20)
+        head.sety(y + 10)
 
     if head.direction == "down":
         y = head.ycor()
-        head.sety(y - 20)
+        head.sety(y - 10)
 
     if head.direction == "left":
         x = head.xcor()
-        head.setx(x - 20)
+        head.setx(x - 10)
 
     if head.direction == "right":
         x = head.xcor()
-        head.setx(x + 20)
+        head.setx(x + 10)
 
 # Contrôles du clavier
 wn.listen()
@@ -89,48 +130,65 @@ wn.onkeypress(go_down, "Down")
 wn.onkeypress(go_left, "Left")
 wn.onkeypress(go_right, "Right")
 
+def reset_game():
+    global score, delay
+    time.sleep(1)
+    head.goto(0,0)
+    head.direction = "stop"
+
+    for segment in segments:
+        segment.goto(1000, 1000)
+    
+    segments.clear()
+    
+    # Recréer les 3 blocs initiaux
+    for _ in range(2):
+        seg = turtle.Turtle()
+        seg.speed(0)
+        seg.shape("square")
+        seg.color("#4caf50")
+        seg.penup()
+        seg.goto(0, -20 * (len(segments) + 1))
+        segments.append(seg)
+
+    score = 0
+    delay = 0.05
+
+    pen.clear()
+    pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 18, "bold"))
+
 # Boucle principale
 while True:
     wn.update()
 
     # Vérifier si la tête touche un bord
-    if head.xcor()>290 or head.xcor()<-290 or head.ycor()>290 or head.ycor()<-290:
-        time.sleep(1)
-        head.goto(0,0)
-        head.direction = "stop"
-
-        for segment in segments:
-            segment.goto(1000, 1000)
-        
-        segments.clear()
-        score = 0
-        delay = 0.1
-
-        pen.clear()
-        pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 20, "bold")) 
+    if head.xcor()>295 or head.xcor()<-295 or head.ycor()>295 or head.ycor()<-295:
+        reset_game()
 
     # Vérifier si la tête touche la nourriture
-    if head.distance(food) < 20:
-        x = random.randint(-280, 280)
-        y = random.randint(-280, 280)
+    if head.distance(food) < 15:
+        x = random.randrange(-280, 281, 10)
+        y = random.randrange(-280, 281, 10)
         food.goto(x,y)
 
-        # Ajouter un segment (corps d'une nuance légèrement différente)
         new_segment = turtle.Turtle()
         new_segment.speed(0)
         new_segment.shape("square")
-        new_segment.color("#89b4fa")
+        new_segment.color("#4caf50")
         new_segment.penup()
         segments.append(new_segment)
 
-        delay -= 0.001
+        delay -= 0.0005
         score += 10
 
         if score > high_score:
             high_score = score
+            # Sauvegarder le nouveau record dans le fichier
+            with open("highscore.txt", "w") as f:
+                f.write(str(high_score))
         
         pen.clear()
-        pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 20, "bold")) 
+        pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 18, "bold"))
 
     # Déplacer les segments
     for index in range(len(segments)-1, 0, -1):
@@ -147,19 +205,9 @@ while True:
 
     # Vérifier la collision avec le corps
     for segment in segments:
-        if segment.distance(head) < 20:
-            time.sleep(1)
-            head.goto(0,0)
-            head.direction = "stop"
-        
-            for segment in segments:
-                segment.goto(1000, 1000)
-        
-            segments.clear()
-            score = 0
-            delay = 0.1
-        
-            pen.clear()
-            pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 20, "bold"))
+        if segment.distance(head) < 10:
+            reset_game()
 
     time.sleep(delay)
+
+wn.mainloop()
