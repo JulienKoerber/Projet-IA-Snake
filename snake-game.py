@@ -2,11 +2,11 @@ import turtle
 import time
 import random
 
-delay = 0.05
+# Vitesse initiale (ralentie car on avance de 20px au lieu de 10px maintenant)
+delay = 0.1 
 
 # Scores
 score = 0
-# Charger le high score depuis un fichier externe s'il existe
 try:
     with open("highscore.txt", "r") as f:
         high_score = int(f.read())
@@ -16,7 +16,7 @@ except:
 # Créer la fenêtre
 wn = turtle.Screen()
 wn.title("Jeu Snake")
-wn.bgcolor("#aad751")  # Couleur de fond principale (vert clair)
+wn.bgcolor("#aad751")
 wn.setup(width=600, height=600)
 wn.tracer(0)
 
@@ -26,56 +26,57 @@ grid_pen.speed(0)
 grid_pen.hideturtle()
 
 def draw_grid():
-    # Taille de la map : de -300 à 300 (soit 600x600), avec des carreaux de 20x20
     grid_pen.up()
-    
-    for x in range(-290, 300, 20):
-        for y in range(-290, 300, 20):
+    # On centre parfaitement la grille sur des multiples de 20 (de -280 à 280)
+    for x in range(-280, 281, 20):
+        for y in range(-280, 281, 20):
             grid_pen.goto(x, y)
             grid_pen.down()
             grid_pen.shape("square")
             grid_pen.shapesize(1, 1) # Un carré de 20x20 pixels
+            
             # Alternance basée sur la position pour créer l'effet damier
-            if (x // 20 + y // 20) % 2 == 0:
+            if ((x / 20) + (y / 20)) % 2 == 0:
                 grid_pen.color("#a2d149") # Vert normal
             else:
                 grid_pen.color("#aad751") # Vert clair
+            
             grid_pen.stamp()
             grid_pen.up()
 
 # Dessiner la grille au démarrage
 draw_grid()
 
-# Initialisation de la liste des segments avant de créer les segments de base
 segments = []
 
-# Tête du serpent (Vert foncé classique)
+# Tête du serpent
 head = turtle.Turtle()
 head.speed(0)
 head.shape("square")
 head.color("#388a34")
 head.penup()
-head.goto(0,0)
+head.goto(0, 0) # Parfaitement au centre de la grille
 head.direction = "stop"
 
+# Création du corps initial
 for _ in range(2):
     seg = turtle.Turtle()
     seg.speed(0)
     seg.shape("square")
     seg.color("#4caf50")
     seg.penup()
-    seg.goto(0, -20 * (len(segments) + 1))  # Alignés en dessous de la tête
+    seg.goto(0, -20 * (len(segments) + 1))
     segments.append(seg)
 
-# Nourriture (Une pomme rouge)
+# Nourriture (Pomme)
 food = turtle.Turtle()
 food.speed(0)
-food.shape("square") # Souvent carré ou rond, carré fait très rétro
+food.shape("square")
 food.color("#e74c3c")
 food.penup()
-food.goto(0,100)
+food.goto(0, 100) # Aligné sur la grille (multiple de 20)
 
-# Affichage du score (En vert très foncé pour contraster avec le fond)
+# Affichage du score
 pen = turtle.Turtle()
 pen.speed(0)
 pen.shape("square")
@@ -103,21 +104,15 @@ def go_right():
         head.direction = "right"
 
 def move():
+    # Le serpent avance désormais de 20 pixels pour s'emboîter dans les cases
     if head.direction == "up":
-        y = head.ycor()
-        head.sety(y + 10)
-
+        head.sety(head.ycor() + 20)
     if head.direction == "down":
-        y = head.ycor()
-        head.sety(y - 10)
-
+        head.sety(head.ycor() - 20)
     if head.direction == "left":
-        x = head.xcor()
-        head.setx(x - 10)
-
+        head.setx(head.xcor() - 20)
     if head.direction == "right":
-        x = head.xcor()
-        head.setx(x + 10)
+        head.setx(head.xcor() + 20)
 
 # Contrôles du clavier
 wn.listen()
@@ -133,7 +128,7 @@ wn.onkeypress(go_right, "Right")
 def reset_game():
     global score, delay
     time.sleep(1)
-    head.goto(0,0)
+    head.goto(0, 0)
     head.direction = "stop"
 
     for segment in segments:
@@ -141,7 +136,6 @@ def reset_game():
     
     segments.clear()
     
-    # Recréer les 3 blocs initiaux
     for _ in range(2):
         seg = turtle.Turtle()
         seg.speed(0)
@@ -152,7 +146,7 @@ def reset_game():
         segments.append(seg)
 
     score = 0
-    delay = 0.05
+    delay = 0.1 # On réinitialise à la nouvelle vitesse
 
     pen.clear()
     pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 18, "bold"))
@@ -161,15 +155,16 @@ def reset_game():
 while True:
     wn.update()
 
-    # Vérifier si la tête touche un bord
-    if head.xcor()>295 or head.xcor()<-295 or head.ycor()>295 or head.ycor()<-295:
+    # Les bordures sont maintenant à 280 (la dernière case valide de la grille)
+    if head.xcor() > 280 or head.xcor() < -280 or head.ycor() > 280 or head.ycor() < -280:
         reset_game()
 
-    # Vérifier si la tête touche la nourriture
+    # Si la tête touche la nourriture
     if head.distance(food) < 15:
-        x = random.randrange(-280, 281, 10)
-        y = random.randrange(-280, 281, 10)
-        food.goto(x,y)
+        # La pomme apparait UNIQUEMENT sur des multiples de 20
+        x = random.randrange(-280, 281, 20)
+        y = random.randrange(-280, 281, 20)
+        food.goto(x, y)
 
         new_segment = turtle.Turtle()
         new_segment.speed(0)
@@ -178,19 +173,19 @@ while True:
         new_segment.penup()
         segments.append(new_segment)
 
-        delay -= 0.0005
+        # On accélère le jeu progressivement
+        delay -= 0.002
         score += 10
 
         if score > high_score:
             high_score = score
-            # Sauvegarder le nouveau record dans le fichier
             with open("highscore.txt", "w") as f:
                 f.write(str(high_score))
         
         pen.clear()
         pen.write("Score: {}  High Score: {}".format(score, high_score), align="center", font=("Courier", 18, "bold"))
 
-    # Déplacer les segments
+    # Déplacer le corps du serpent
     for index in range(len(segments)-1, 0, -1):
         x = segments[index-1].xcor()
         y = segments[index-1].ycor()
@@ -199,7 +194,7 @@ while True:
     if len(segments) > 0:
         x = head.xcor()
         y = head.ycor()
-        segments[0].goto(x,y)
+        segments[0].goto(x, y)
 
     move()    
 
