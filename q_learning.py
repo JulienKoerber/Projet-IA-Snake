@@ -111,3 +111,4 @@ class QLearningAgent:
                     self.q_table = {eval(k): v for k, v in data.get("q_table", {}).items()}
                 except:
                     self.q_table = {}
+                    
