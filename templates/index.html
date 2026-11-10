@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake IA - Apprentissage par Renforcement Q-Learning</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- Feuille de style personnalisée -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+    <!-- Barre de navigation -->
+    <nav class="navbar navbar-dark mb-4">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand mb-0 h1">
+                🐍 <span>Snake IA</span>
+                <span class="badge bg-light text-dark fs-6 ms-2">Q-Learning</span>
+            </span>
+            <div class="d-flex align-items-center gap-2">
+                <span id="statusBadge" class="badge bg-secondary">Chargement...</span>
+                <span class="text-white-50 small d-none d-md-inline">ENSISA - Projet IA</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-lg-5">
+        <div class="row g-4">
+            
+            <!-- Colonne de Gauche : Plateau de jeu Canvas -->
+            <div class="col-lg-7 d-flex flex-column align-items-center">
+                <div class="game-container">
+                    <canvas id="snakeCanvas" width="600" height="600"></canvas>
+                </div>
+
+                <!-- Contrôles sous le canvas -->
+                <div class="card w-100 mt-3 p-3" style="max-width: 624px;">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-sm-6 d-flex gap-2">
+                            <button id="btnPlayPause" class="btn btn-success flex-fill">
+                                <i class="bi bi-play-fill"></i> Démarrer
+                            </button>
+                            <button id="btnReset" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-counterclockwise"></i> Rejouer
+                            </button>
+                        </div>
+                        <div class="col-sm-6 text-sm-end text-muted small">
+                            <kbd>Espace</kbd> = Turbo | <kbd>P</kbd> = Pause | <kbd>Flèches</kbd> / <kbd>ZQSD</kbd>
+                        </div>
+                    </div>
+
+                    <!-- Pavé tactile pour mobile / manuel -->
+                    <div class="d-pad d-md-none mt-3">
+                        <div></div>
+                        <button class="btn btn-outline-dark d-pad-btn" data-dir="up"><i class="bi bi-chevron-up"></i></button>
+                        <div></div>
+                        <button class="btn btn-outline-dark d-pad-btn" data-dir="left"><i class="bi bi-chevron-left"></i></button>
+                        <button class="btn btn-outline-dark d-pad-btn" data-dir="down"><i class="bi bi-chevron-down"></i></button>
+                        <button class="btn btn-outline-dark d-pad-btn" data-dir="right"><i class="bi bi-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Colonne de Droite : Tableau de bord & Graphiques -->
+            <div class="col-lg-5">
+                
+                <!-- Statistiques en direct -->
+                <div class="row g-3 mb-3">
+                    <div class="col-6 col-sm-4">
+                        <div class="stat-card">
+                            <div class="label">Score</div>
+                            <div class="value" id="valScore">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="stat-card">
+                            <div class="label">High Score</div>
+                            <div class="value" id="valHighScore">{{ highscore }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-sm-4">
+                        <div class="stat-card">
+                            <div class="label">Évolutions</div>
+                            <div class="value" id="valGenerations">{{ generations }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-sm-6">
+                        <div class="stat-card">
+                            <div class="label">Exploration (Epsilon)</div>
+                            <div class="value" id="valEpsilon">10.0%</div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                        <div class="stat-card">
+                            <div class="label">États mémorisés (Q-Table)</div>
+                            <div class="value" id="valStatesCount">{{ q_table_size }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panneau de Configuration -->
+                <div class="card p-3 mb-3">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i> Paramètres de simulation</h6>
+                    
+                    <!-- Mode de jeu -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Mode de jeu :</label>
+                        <div class="btn-group w-100" role="group">
+                            <button class="btn btn-outline-success btn-mode active" data-mode="ai">
+                                <i class="bi bi-cpu me-1"></i> IA Q-Learning
+                            </button>
+                            <button class="btn btn-outline-success btn-mode" data-mode="human">
+                                <i class="bi bi-person me-1"></i> Joueur Manuel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Vitesse -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Vitesse d'observation :</label>
+                        <div class="btn-group w-100" role="group">
+                            <button class="btn btn-outline-secondary btn-speed" data-speed="slow">Lente</button>
+                            <button class="btn btn-outline-secondary btn-speed active" data-speed="normal">Normale</button>
+                            <button class="btn btn-outline-secondary btn-speed" data-speed="fast">Rapide</button>
+                            <button class="btn btn-outline-secondary btn-speed" data-speed="turbo">
+                                <i class="bi bi-lightning-charge-fill text-warning"></i> Turbo
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Actions Modèle & Serveur -->
+                    <div class="d-flex gap-2">
+                        <button id="btnSave" class="btn btn-outline-primary flex-fill btn-sm">
+                            <i class="bi bi-cloud-arrow-up me-1"></i> Sauvegarder l'IA
+                        </button>
+                        <button id="btnResetModel" class="btn btn-outline-danger flex-fill btn-sm">
+                            <i class="bi bi-trash me-1"></i> Réinitialiser l'IA
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Graphique de progression en direct -->
+                <div class="chart-card">
+                    <h6 class="fw-bold mb-2 small"><i class="bi bi-graph-up me-1"></i> Progression de l'IA (Scores par partie)</h6>
+                    <div style="position: relative; height: 210px;">
+                        <canvas id="progressChart"></canvas>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        Projet IA Snake • Réseau de Q-Learning (11 états, $\alpha=0.1, \gamma=0.9$) • Déployable sur PythonAnywhere
+    </footer>
+
+    <!-- Chart.js pour le graphique temps réel -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Logique Q-Learning JS -->
+    <script src="{{ url_for('static', filename='js/q_learning.js') }}"></script>
+    <!-- Moteur de jeu Canvas -->
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+</body>
+</html>
