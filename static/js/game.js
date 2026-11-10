@@ -239,10 +239,10 @@ function simulationStep() {
     let stateKey = null;
     let action = null;
 
-    // 1. Choix de l'action si IA
+    // 1. Choix de l'action si IA (avec analyse spatiale & Flood Fill)
     if (gameMode === "ai") {
         stateKey = agent.getStateKey(head, food, segments, head.direction);
-        action = agent.getAction(stateKey);
+        action = agent.getAction(stateKey, head, segments, head.direction);
 
         // Empêcher demi-tour immédiat
         if (action === "up" && head.direction !== "down") head.direction = "up";
@@ -273,21 +273,21 @@ function simulationStep() {
     // Distance après mouvement
     const newDistance = Math.hypot(head.x - food.x, head.y - food.y);
 
-    // Récompense de rapprochement
-    let reward = (newDistance < oldDistance) ? 1 : -2;
+    // Récompense équilibrée : +1.5 en rapprochement, -0.5 en éloignement (permet les détours stratégiques)
+    let reward = (newDistance < oldDistance) ? 1.5 : -0.5;
     let gameOver = false;
 
     // Collision murs
     if (head.x > GRID_MAX || head.x < GRID_MIN || head.y > GRID_MAX || head.y < GRID_MIN) {
         gameOver = true;
-        reward = -10;
+        reward = -15;
     }
 
     // Collision corps
     for (let seg of segments) {
         if (Math.hypot(seg.x - head.x, seg.y - head.y) < 10) {
             gameOver = true;
-            reward = -10;
+            reward = -15;
             break;
         }
     }
@@ -297,7 +297,7 @@ function simulationStep() {
         spawnFood();
         segments.push({ x: head.x, y: head.y });
         score += 10;
-        reward = 10;
+        reward = 15;
 
         if (score > highScore) {
             highScore = score;

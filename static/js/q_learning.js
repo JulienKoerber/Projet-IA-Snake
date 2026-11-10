@@ -117,28 +117,122 @@ class QLearningAgent {
     }
 
     /**
-     * Choisit une action selon la stratégie epsilon-greedy.
+     * Analyse spatiale avancée (Action Masking & Flood Fill) :
+     * Empêche les suicides immédiats et évalue la surface libre accessible
+     * pour ne pas s'enfermer dans un cul-de-sac plus petit que le corps.
      */
-    getAction(stateKey) {
-        const curEpsilon = this.getCurrentEpsilon();
+    getSafeActions(head, segments, direction) {
+        const hx = head.x;
+        const hy = head.y;
+        const moves = {
+            up: [hx, hy + 20],
+            down: [hx, hy - 20],
+            left: [hx - 20, hy],
+            right: [hx + 20, hy]
+        };
+        const opposites = { up: "down", down: "up", left: "right", right: "left" };
 
-        // Exploration aléatoire
-        if (Math.random() < curEpsilon) {
-            const randIndex = Math.floor(Math.random() * this.actions.length);
-            return this.actions[randIndex];
+        const validMoves = {};
+        for (const [a, pt] of Object.entries(moves)) {
+            if (direction === "stop" || a !== opposites[direction]) {
+                validMoves[a] = pt;
+            }
         }
 
-        // Exploitation de la table Q
+        const isCollision = (pt) => {
+            const [x, y] = pt;
+            if (x > 280 || x < -280 || y > 280 || y < -280) return true;
+            for (let i = 0; i < segments.length; i++) {
+                const seg = segments[i];
+                if (Math.hypot(seg.x - x, seg.y - y) < 15) return true;
+            }
+            return false;
+        };
+
+        const nonColliding = {};
+        for (const [a, pt] of Object.entries(validMoves)) {
+            if (!isCollision(pt)) {
+                nonColliding[a] = pt;
+            }
+        }
+
+        const nonCollidingActions = Object.keys(nonColliding);
+        if (nonCollidingActions.length === 0) {
+            return Object.keys(validMoves);
+        }
+
+        // BFS / Flood Fill pour calculer l'espace disponible
+        const maxDepth = Math.max(segments.length + 5, 30);
+        const actionSpaces = {};
+
+        for (const [a, startPt] of Object.entries(nonColliding)) {
+            const visited = new Set();
+            visited.add(`${startPt[0]},${startPt[1]}`);
+            const queue = [startPt];
+            let count = 0;
+
+            while (queue.length > 0 && count < maxDepth) {
+                const [cx, cy] = queue.shift();
+                count++;
+
+                const neighbors = [
+                    [cx + 20, cy],
+                    [cx - 20, cy],
+                    [cx, cy + 20],
+                    [cx, cy - 20]
+                ];
+
+                for (const [nx, ny] of neighbors) {
+                    const key = `${nx},${ny}`;
+                    if (!visited.has(key) && !isCollision([nx, ny])) {
+                        visited.add(key);
+                        queue.push([nx, ny]);
+                    }
+                }
+            }
+            actionSpaces[a] = count;
+        }
+
+        // Actions avec assez de place pour tout le corps du serpent
+        const safeActions = Object.keys(actionSpaces).filter(a => actionSpaces[a] >= segments.length);
+        if (safeActions.length > 0) {
+            return safeActions;
+        }
+
+        // Sinon, action qui offre le plus d'espace de survie
+        const maxSp = Math.max(...Object.values(actionSpaces));
+        return Object.keys(actionSpaces).filter(a => actionSpaces[a] === maxSp);
+    }
+
+    /**
+     * Choisit une action selon la stratégie epsilon-greedy combinée
+     * avec le filtre des actions spatialement sécurisées.
+     */
+    getAction(stateKey, head = null, segments = null, direction = null) {
+        let actions = this.actions;
+        if (head && segments && direction) {
+            actions = this.getSafeActions(head, segments, direction);
+        }
+
+        const curEpsilon = this.getCurrentEpsilon();
+
+        // Exploration aléatoire restreinte aux actions viables
+        if (Math.random() < curEpsilon) {
+            const randIndex = Math.floor(Math.random() * actions.length);
+            return actions[randIndex];
+        }
+
+        // Exploitation de la table Q parmi les actions viables
         if (!this.q_table[stateKey]) {
             this.q_table[stateKey] = { up: 0.0, down: 0.0, left: 0.0, right: 0.0 };
         }
 
         const actionsObj = this.q_table[stateKey];
-        let bestAction = this.actions[0];
+        let bestAction = actions[0];
         let bestVal = -Infinity;
 
         // Choix du meilleur Q(s, a)
-        for (const act of this.actions) {
+        for (const act of actions) {
             const val = actionsObj[act] !== undefined ? actionsObj[act] : 0.0;
             if (val > bestVal) {
                 bestVal = val;

@@ -52,16 +52,18 @@ L'état $s$ est un tuple de 11 booléens :
   10. Nourriture au-dessus de la tête
   11. Nourriture en-dessous de la tête
 
-### 2. Actions
+### 2. Actions & Masquage Sécurisé (Action Masking)
 À chaque case, 4 actions discrètes sont possibles :
 $$\mathcal{A} = \{\text{"up"}, \text{"down"}, \text{"left"}, \text{"right"}\}$$
-*(Les demi-tours immédiats à 180° sont bloqués).*
+* **Filtrage des demi-tours à 180°**.
+* **Action Masking + Flood Fill (BFS) :** L'agent élimine les mouvements suicidaires (murs, corps) et évalue la surface accessible dans chaque direction. Si une issue mène à un cul-de-sac plus petit que la longueur du serpent, elle est disqualifiée pour éviter les auto-enfermements.
+* La table Q choisit la meilleure action parmi les directions spatialement viables.
 
-### 3. Fonction de Récompense
-* Se rapproche de la pomme : **+1**
-* S'éloigne de la pomme : **-2**
-* Mange la pomme : **+10**
-* Collision (mort contre mur ou propre corps) : **-10**
+### 3. Fonction de Récompense (Reward Shaping)
+* Se rapproche de la pomme : **+1.5**
+* S'éloigne de la pomme : **-0.5** *(pénalité adoucie pour autoriser les détours stratégiques de survie)*
+* Mange la pomme : **+15**
+* Collision (mort contre mur ou propre corps) : **-15**
 
 ### 4. Mise à jour de Bellman
 $$Q(s, a) \leftarrow (1 - \alpha) Q(s, a) + \alpha \left[ r + \gamma \max_{a'} Q(s', a') \right]$$

@@ -67,8 +67,94 @@ class QLearningAgent:
         )
         return state
 
-    def get_action(self, state):
-        actions = ["up", "down", "left", "right"]
+    def get_safe_actions(self, head, segments, direction):
+        hx, hy = head.xcor(), head.ycor()
+        moves = {
+            "up": (hx, hy + 20),
+            "down": (hx, hy - 20),
+            "left": (hx - 20, hy),
+            "right": (hx + 20, hy)
+        }
+        opposites = {"up": "down", "down": "up", "left": "right", "right": "left"}
+        valid_moves = {a: pt for a, pt in moves.items() if direction == "stop" or a != opposites.get(direction)}
+
+        # 1. Vérification des collisions immédiates (murs et corps sans la queue qui avance)
+        # Remarque : le dernier segment de queue libère sa case au prochain coup
+        tail_pt = (segments[-1].xcor(), segments[-1].ycor()) if segments else None
+        body_obstacles = set()
+        for idx, seg in enumerate(segments):
+            # Le dernier segment avance, sauf s'il n'y a qu'un segment
+            if idx < len(segments) - 1:
+                body_obstacles.add((seg.xcor(), seg.ycor()))
+
+        def is_collision(pt, include_tail=True):
+            x, y = pt
+            if x > 280 or x < -280 or y > 280 or y < -280:
+                return True
+            if include_tail and tail_pt and pt == tail_pt:
+                return False  # La queue libère sa case
+            return pt in body_obstacles
+
+        non_colliding = {a: pt for a, pt in valid_moves.items() if not is_collision(pt, False)}
+        if not non_colliding:
+            return list(valid_moves.keys())
+
+        # 2. Test du chemin vers la queue (Tail-Safety)
+        # Si le serpent est assez long (> 10 segments), la règle d'or pour dépasser 1000+ points
+        # est de s'assurer qu'il existe toujours un chemin libre pour rejoindre sa propre queue.
+        def has_path_to_tail(start_pt):
+            if not tail_pt:
+                return True
+            queue = [start_pt]
+            visited = {start_pt}
+            while queue:
+                cx, cy = queue.pop(0)
+                if (cx, cy) == tail_pt:
+                    return True
+                for nx, ny in [(cx + 20, cy), (cx - 20, cy), (cx, cy + 20), (cx, cy - 20)]:
+                    npt = (nx, ny)
+                    if -280 <= nx <= 280 and -280 <= ny <= 280:
+                        if npt not in visited and npt not in body_obstacles:
+                            visited.add(npt)
+                            queue.append(npt)
+            return False
+
+        tail_safe_moves = [a for a, pt in non_colliding.items() if has_path_to_tail(pt)]
+        candidate_pool = tail_safe_moves if tail_safe_moves else list(non_colliding.keys())
+
+        # 3. Flood Fill / BFS pour évaluer l'espace disponible
+        max_depth = max(len(segments) + 10, 40)
+        action_spaces = {}
+        for a in candidate_pool:
+            start_pt = non_colliding[a]
+            visited = {start_pt}
+            queue = [start_pt]
+            count = 0
+            while queue and count < max_depth:
+                cx, cy = queue.pop(0)
+                count += 1
+                for nx, ny in [(cx + 20, cy), (cx - 20, cy), (cx, cy + 20), (cx, cy - 20)]:
+                    npt = (nx, ny)
+                    if -280 <= nx <= 280 and -280 <= ny <= 280:
+                        if npt not in visited and npt not in body_obstacles:
+                            visited.add(npt)
+                            queue.append(npt)
+            action_spaces[a] = count
+
+        # Actions ayant assez d'espace pour le serpent
+        safe_actions = [a for a, sp in action_spaces.items() if sp >= len(segments)]
+        if safe_actions:
+            return safe_actions
+
+        max_sp = max(action_spaces.values())
+        return [a for a, sp in action_spaces.items() if sp == max_sp]
+
+    def get_action(self, state, head=None, segments=None, direction=None):
+        if head is not None and segments is not None and direction is not None:
+            actions = self.get_safe_actions(head, segments, direction)
+        else:
+            actions = ["up", "down", "left", "right"]
+
         # Plus elle fait de parties, moins elle joue au hasard (Exploration décroissante)
         current_epsilon = max(0.01, self.epsilon - (self.generations * 0.001))
         
@@ -76,9 +162,9 @@ class QLearningAgent:
             return random.choice(actions)
         
         if state not in self.q_table:
-            self.q_table[state] = {a: 0.0 for a in actions}
+            self.q_table[state] = {a: 0.0 for a in ["up", "down", "left", "right"]}
         
-        return max(self.q_table[state], key=self.q_table[state].get)
+        return max(actions, key=lambda a: self.q_table[state].get(a, 0.0))
 
     def train(self, state, action, reward, next_state, game_over):
         if state not in self.q_table:

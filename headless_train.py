@@ -60,14 +60,14 @@ def run_headless_training(episodes=200):
 
         score = 0
         steps_without_food = 0
-        max_steps = 500  # Empêche les boucles infinies potentielles
+        max_steps = 800  # Nombre max de pas sans manger de pomme
 
         while steps_without_food < max_steps:
             steps_without_food += 1
 
-            # 1. État et action
+            # 1. État et action avec masque d'action sécurisé & flood fill
             state = agent.get_state(head, food, segments, direction)
-            action = agent.get_action(state)
+            action = agent.get_action(state, head, segments, direction)
 
             if action == "up" and direction != "down":
                 direction = "up"
@@ -97,27 +97,28 @@ def run_headless_training(episodes=200):
                 head.setx(head.xcor() + 20)
 
             new_dist = head.distance(food)
-            reward = 1 if new_dist < old_dist else -2
+            # Récompense douce : +1.5 en se rapprochant, -0.5 en s'éloignant (permet les détours salvateurs)
+            reward = 1.5 if new_dist < old_dist else -0.5
             game_over = False
 
             # Collision murs
             if (head.xcor() > 280 or head.xcor() < -280 or
                 head.ycor() > 280 or head.ycor() < -280):
                 game_over = True
-                reward = -10
+                reward = -15
 
             # Collision corps
             if not game_over:
                 for seg in segments:
                     if seg.distance(head) < 10:
                         game_over = True
-                        reward = -10
+                        reward = -15
                         break
 
             # Manger la pomme
             if not game_over and head.distance(food) < 15:
                 score += 10
-                reward = 10
+                reward = 15
                 steps_without_food = 0
                 food.goto(random_grid_coord(), random_grid_coord())
                 segments.append(HeadlessPoint(head.xcor(), head.ycor()))

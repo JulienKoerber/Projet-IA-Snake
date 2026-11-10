@@ -211,7 +211,7 @@ while True:
     state = None
     if ACTIVER_IA:
         state = agent.get_state(head, food, segments, head.direction)
-        action = agent.get_action(state)
+        action = agent.get_action(state, head, segments, head.direction)
         # L'IA donne une action, on empêche le demi-tour immédiat
         if action == "up" and head.direction != "down": head.direction = "up"
         if action == "down" and head.direction != "up": head.direction = "down"
@@ -236,24 +236,24 @@ while True:
     # --- ON MESURE LA DISTANCE APRES AVOIR BOUGÉ ---
     new_distance = head.distance(food)
     
-    # Évaluation pour l'IA
+    # Évaluation pour l'IA (Récompenses équilibrées)
     if new_distance < old_distance:
-        reward = 1    # Récompense : On se rapproche de la pomme !
+        reward = 1.5   # Récompense : On se rapproche de la pomme !
     else:
-        reward = -2   # Punition : On s'éloigne ou on tourne en rond !
+        reward = -0.5  # Légère pénalité : autorise les détours sans suicider le serpent
         
     game_over = False
 
     # Collision avec les murs
     if head.xcor() > 280 or head.xcor() < -280 or head.ycor() > 280 or head.ycor() < -280:
         game_over = True
-        reward = -10  # Grosse punition pour la mort
+        reward = -15  # Punition pour la mort
 
     # Collision avec le corps
     for segment in segments:
         if segment.distance(head) < 10:
             game_over = True
-            reward = -10  # Grosse punition pour la mort
+            reward = -15  # Punition pour la mort
 
     # Manger la pomme
     if head.distance(food) < 15:
@@ -270,7 +270,7 @@ while True:
         segments.append(new_segment)
         
         score += 10
-        reward = 10  # Grosse récompense pour avoir mangé
+        reward = 15  # Grosse récompense pour avoir mangé
         if score > high_score:
             high_score = score
             with open("highscore.txt", "w") as f:
