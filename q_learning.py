@@ -11,7 +11,7 @@ class QLearningAgent:
         self.generations = 0
         self.load_model()
 
-    def get_state(self, head, food, segments, direction):
+    def get_state(self, head, food, segments, direction, obstacles=()):
         hx, hy = head.xcor(), head.ycor()
         
         # Coordonnées des cases adjacentes
@@ -25,10 +25,12 @@ class QLearningAgent:
         dir_u = direction == "up"
         dir_d = direction == "down"
 
-        # Fonction pour vérifier si une case spécifique est un mur ou le corps
+        # Fonction pour vérifier si une case spécifique est un mur, le corps ou un obstacle
         def is_collision(pt):
             x, y = pt
             if x > 280 or x < -280 or y > 280 or y < -280:
+                return True
+            if (x, y) in obstacles:
                 return True
             for seg in segments:
                 if seg.distance(x, y) < 15:

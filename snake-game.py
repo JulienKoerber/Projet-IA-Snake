@@ -2,6 +2,8 @@ import turtle
 import time
 import random
 import os
+import matplotlib
+matplotlib.use("TkAgg")  # Correction macOS : le backend natif _macosx crashe avec plt.pause() (erreur GIL)
 import matplotlib.pyplot as plt
 from q_learning import QLearningAgent
 
@@ -9,16 +11,13 @@ from q_learning import QLearningAgent
 ACTIVER_IA = True  # Mets sur False pour jouer toi-même au clavier
 VITESSE_IA = 0.05  # Vitesse d'observation. Appuie sur ESPACE en jeu pour passer à 0.0 (Vitesse max)
 RESET_IA = True    # True = Efface la mémoire et remet les évolutions à 0 au démarrage
+NB_OBSTACLES = 10  # Nombre d'obstacles aléatoires à chaque nouvelle partie
 
 delay = VITESSE_IA if ACTIVER_IA else 0.1
 
 # --- REMISE À ZÉRO DE L'IA ---
 if RESET_IA and os.path.exists("q_model.json"):
     os.remove("q_model.json")
-
-# --- INITIALISATION MATPLOTLIB ---
-plt.ion()  # Active le mode interactif pour le graphique en direct
-fig = plt.figure()
 
 plot_scores = []
 plot_mean_scores = []
@@ -35,12 +34,16 @@ except:
 # Initialisation de l'agent si l'IA est activée
 agent = QLearningAgent() if ACTIVER_IA else None
 
-# --- CRÉATION DE LA FENÊTRE TURTLE ---
+# --- CRÉATION DE LA FENÊTRE TURTLE (EN PREMIER) ---
 wn = turtle.Screen()
 wn.title("Jeu Snake - IA Q-Learning (Espace = Turbo)")
 wn.bgcolor("#aad751")
 wn.setup(width=600, height=600)
 wn.tracer(0)
+
+# --- INITIALISATION MATPLOTLIB (APRÈS TURTLE) ---
+plt.ion()  # Active le mode interactif pour le graphique en direct
+fig = plt.figure()
 
 # --- DESSIN DU DAMIER ---
 grid_pen = turtle.Turtle()
@@ -96,6 +99,40 @@ food.shape("square")
 food.color("#e74c3c")
 food.penup()
 food.goto(0, 100)
+
+# --- OBSTACLES ALÉATOIRES ---
+obstacles = []          # Coordonnées [(x, y), ...] des obstacles de la partie en cours
+obstacle_sprites = []   # Tortues graphiques associées (pour pouvoir les effacer)
+
+def place_obstacles():
+    """Tire NB_OBSTACLES positions aléatoires valides et les dessine.
+    Évite : la zone de départ du serpent, la pomme, et les doublons."""
+    # On efface les obstacles de la partie précédente
+    for t in obstacle_sprites:
+        t.hideturtle()
+    obstacle_sprites.clear()
+    obstacles.clear()
+    
+    while len(obstacles) < NB_OBSTACLES:
+        x = random.randrange(-280, 281, 20)
+        y = random.randrange(-280, 281, 20)
+        # On ne place jamais d'obstacle près du centre (zone de départ du serpent)
+        if abs(x) < 80 and abs(y) < 80:
+            continue
+        # Pas de doublon ni sur la pomme
+        if (x, y) in obstacles or food.distance(x, y) < 20:
+            continue
+        obstacles.append((x, y))
+        
+        t = turtle.Turtle()
+        t.speed(0)
+        t.shape("square")
+        t.color("#57534e")
+        t.penup()
+        t.goto(x, y)
+        obstacle_sprites.append(t)
+
+place_obstacles()
 
 # Affichage du score sur l'écran de jeu
 pen = turtle.Turtle()
@@ -195,6 +232,9 @@ def reset_game():
         seg.goto(0, -20 * (len(segments) + 1))
         segments.append(seg)
         
+    # Nouveau terrain : on regénère des obstacles aléatoires
+    place_obstacles()
+    
     score = 0
     # Si un humain joue, on remet le delay à 0.1 pour réinitialiser la difficulté
     if not ACTIVER_IA:
@@ -210,7 +250,7 @@ while True:
     # 1. État avant le mouvement (Pour l'IA)
     state = None
     if ACTIVER_IA:
-        state = agent.get_state(head, food, segments, head.direction)
+        state = agent.get_state(head, food, segments, head.direction, obstacles)
         action = agent.get_action(state)
         # L'IA donne une action, on empêche le demi-tour immédiat
         if action == "up" and head.direction != "down": head.direction = "up"
@@ -255,11 +295,20 @@ while True:
             game_over = True
             reward = -10  # Grosse punition pour la mort
 
+    # Collision avec un obstacle
+    for (ox, oy) in obstacles:
+        if head.distance(ox, oy) < 15:
+            game_over = True
+            reward = -10  # Grosse punition pour la mort
+
     # Manger la pomme
     if head.distance(food) < 15:
-        # Apparition de la pomme sur un multiple de 20
-        x = random.randrange(-280, 281, 20)
-        y = random.randrange(-280, 281, 20)
+        # Apparition de la pomme sur un multiple de 20, jamais sur un obstacle
+        while True:
+            x = random.randrange(-280, 281, 20)
+            y = random.randrange(-280, 281, 20)
+            if (x, y) not in obstacles:
+                break
         food.goto(x, y)
         
         new_segment = turtle.Turtle()
@@ -279,7 +328,7 @@ while True:
 
     # 2. Entraînement de l'IA (mise à jour de la Q-table)
     if ACTIVER_IA:
-        next_state = agent.get_state(head, food, segments, head.direction)
+        next_state = agent.get_state(head, food, segments, head.direction, obstacles)
         agent.train(state, action, reward, next_state, game_over)
 
     # Gestion de la fin de partie
