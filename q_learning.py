@@ -1,6 +1,7 @@
 import random
 import json
 import os
+import ast
 
 class QLearningAgent:
     def __init__(self):
@@ -12,7 +13,8 @@ class QLearningAgent:
         self.load_model()
 
     def get_state(self, head, food, segments, direction, obstacles=()):
-        hx, hy = head.xcor(), head.ycor()
+        hx, hy = round(head.xcor()), round(head.ycor())
+        fx, fy = round(food.xcor()), round(food.ycor())
         
         # Coordonnées des cases adjacentes
         point_l = (hx - 20, hy)
@@ -53,7 +55,7 @@ class QLearningAgent:
                       (dir_r and is_collision(point_u)) or \
                       (dir_l and is_collision(point_d))
 
-        # Nouvel état beaucoup plus précis (11 critères au lieu de 9)
+        # État à 11 critères (dangers relatifs, direction courante, position relative de la pomme)
         state = (
             danger_straight,
             danger_right,
@@ -62,16 +64,16 @@ class QLearningAgent:
             dir_r,
             dir_u,
             dir_d,
-            food.xcor() < hx,  # Nourriture à gauche
-            food.xcor() > hx,  # Nourriture à droite
-            food.ycor() > hy,  # Nourriture en haut
-            food.ycor() < hy   # Nourriture en bas
+            fx < hx,  # Nourriture à gauche
+            fx > hx,  # Nourriture à droite
+            fy > hy,  # Nourriture en haut
+            fy < hy   # Nourriture en bas
         )
         return state
 
     def get_action(self, state):
         actions = ["up", "down", "left", "right"]
-        # Plus elle fait de parties, moins elle joue au hasard (Exploration décroissante)
+        # Exploration décroissante au fil des générations
         current_epsilon = max(0.01, self.epsilon - (self.generations * 0.001))
         
         if random.uniform(0, 1) < current_epsilon:
@@ -110,7 +112,6 @@ class QLearningAgent:
                 data = json.load(f)
                 self.generations = data.get("generations", 0)
                 try:
-                    self.q_table = {eval(k): v for k, v in data.get("q_table", {}).items()}
-                except:
+                    self.q_table = {ast.literal_eval(k): v for k, v in data.get("q_table", {}).items()}
+                except Exception:
                     self.q_table = {}
-                    

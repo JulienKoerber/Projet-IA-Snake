@@ -8,10 +8,12 @@ import matplotlib.pyplot as plt
 from q_learning import QLearningAgent
 
 # --- PARAMÈTRES ---
-ACTIVER_IA = True  # Mets sur False pour jouer toi-même au clavier
-VITESSE_IA = 0.05  # Vitesse d'observation. Appuie sur ESPACE en jeu pour passer à 0.0 (Vitesse max)
-RESET_IA = True    # True = Efface la mémoire et remet les évolutions à 0 au démarrage
-NB_OBSTACLES = 10  # Nombre d'obstacles aléatoires à chaque nouvelle partie
+ACTIVER_IA = True     # Mets sur False pour jouer toi-même au clavier
+VITESSE_IA = 0.05     # Vitesse d'observation. Appuie sur ESPACE en jeu pour passer à 0.0 (Vitesse max)
+RESET_IA = True       # True = Efface la mémoire et remet les évolutions à 0 au démarrage
+NB_OBSTACLES = 10     # Nombre d'obstacles aléatoires à chaque nouvelle partie
+POMME_MOBILE = True   # True = La pomme se déplace et tente d'esquiver le serpent
+FREQUENCE_POMME = 4   # La pomme bouge tous les N déplacements du serpent
 
 delay = VITESSE_IA if ACTIVER_IA else 0.1
 
@@ -22,6 +24,7 @@ if RESET_IA and os.path.exists("q_model.json"):
 plot_scores = []
 plot_mean_scores = []
 total_score = 0
+step_counter = 0  # Compteur de pas pour rythmer les déplacements de la pomme
 
 # --- SCORES ET IA ---
 score = 0
@@ -92,45 +95,98 @@ for _ in range(2):
     seg.goto(0, -20 * (len(segments) + 1))
     segments.append(seg)
 
-# Nourriture
+# Nourriture (Orange vif si mobile, Rouge si fixe)
 food = turtle.Turtle()
 food.speed(0)
 food.shape("square")
-food.color("#e74c3c")
+food.color("#ff9800" if POMME_MOBILE else "#e74c3c")
 food.penup()
 food.goto(0, 100)
 
-# --- OBSTACLES ALÉATOIRES ---
-obstacles = []          # Coordonnées [(x, y), ...] des obstacles de la partie en cours
-obstacle_sprites = []   # Tortues graphiques associées (pour pouvoir les effacer)
+# --- OBSTACLES ALÉATOIRES (Sprites réutilisés pour éviter les ralentissements) ---
+obstacles = []
+obstacle_sprites = []
+for _ in range(NB_OBSTACLES):
+    t = turtle.Turtle()
+    t.speed(0)
+    t.shape("square")
+    t.color("#57534e")
+    t.penup()
+    t.hideturtle()
+    obstacle_sprites.append(t)
+
+def is_cell_occupied(x, y, include_head=True):
+    """Vérifie si une case (x, y) est occupée par un obstacle ou le serpent."""
+    if (x, y) in obstacles:
+        return True
+    if include_head and head.distance(x, y) < 15:
+        return True
+    for seg in segments:
+        if seg.distance(x, y) < 15:
+            return True
+    return False
+
+def spawn_food():
+    """Place la pomme sur une case libre (hors obstacles et hors serpent)."""
+    while True:
+        x = random.randrange(-280, 281, 20)
+        y = random.randrange(-280, 281, 20)
+        if not is_cell_occupied(x, y, include_head=True):
+            food.goto(x, y)
+            break
+
+def move_food():
+    """Déplace la pomme d'une case : tente de fuir si le serpent est proche,
+    sinon se déplace aléatoirement vers une case valide."""
+    if not POMME_MOBILE:
+        return
+
+    fx, fy = round(food.xcor()), round(food.ycor())
+    hx, hy = round(head.xcor()), round(head.ycor())
+
+    directions = [(20, 0), (-20, 0), (0, 20), (0, -20)]
+    valid_moves = []
+
+    for dx, dy in directions:
+        nx, ny = fx + dx, fy + dy
+        # Rester dans la grille et éviter les obstacles et le corps du serpent
+        if -280 <= nx <= 280 and -280 <= ny <= 280:
+            if not is_cell_occupied(nx, ny, include_head=False):
+                valid_moves.append((nx, ny))
+
+    if not valid_moves:
+        return
+
+    # Distance de Manhattan entre la tête et la pomme (en pixels, 60 px = 3 cases)
+    dist_to_head = abs(fx - hx) + abs(fy - hy)
+
+    # Si le serpent est à <= 3 cases, la pomme tente d'esquiver (70% de chance)
+    if dist_to_head <= 60 and random.random() < 0.7:
+        best_move = max(valid_moves, key=lambda pos: abs(pos[0] - hx) + abs(pos[1] - hy))
+        food.goto(best_move[0], best_move[1])
+    else:
+        chosen_move = random.choice(valid_moves)
+        food.goto(chosen_move[0], chosen_move[1])
 
 def place_obstacles():
-    """Tire NB_OBSTACLES positions aléatoires valides et les dessine.
-    Évite : la zone de départ du serpent, la pomme, et les doublons."""
-    # On efface les obstacles de la partie précédente
+    """Tire NB_OBSTACLES positions aléatoires valides et repositionne les sprites."""
+    obstacles.clear()
     for t in obstacle_sprites:
         t.hideturtle()
-    obstacle_sprites.clear()
-    obstacles.clear()
-    
+
     while len(obstacles) < NB_OBSTACLES:
         x = random.randrange(-280, 281, 20)
         y = random.randrange(-280, 281, 20)
-        # On ne place jamais d'obstacle près du centre (zone de départ du serpent)
+        # Zone de sécurité au centre (départ du serpent)
         if abs(x) < 80 and abs(y) < 80:
             continue
         # Pas de doublon ni sur la pomme
         if (x, y) in obstacles or food.distance(x, y) < 20:
             continue
+        idx = len(obstacles)
         obstacles.append((x, y))
-        
-        t = turtle.Turtle()
-        t.speed(0)
-        t.shape("square")
-        t.color("#57534e")
-        t.penup()
-        t.goto(x, y)
-        obstacle_sprites.append(t)
+        obstacle_sprites[idx].goto(x, y)
+        obstacle_sprites[idx].showturtle()
 
 place_obstacles()
 
@@ -171,12 +227,13 @@ def move():
 # Fonction pour basculer la vitesse avec ESPACE
 def toggle_speed():
     global delay
-    if not ACTIVER_IA: return # On ne l'active que si l'IA joue
+    if not ACTIVER_IA:
+        return  # On ne l'active que si l'IA joue
     
     if delay == 0.0:
-        delay = VITESSE_IA # Retour à la vitesse d'observation
+        delay = VITESSE_IA  # Retour à la vitesse d'observation
     else:
-        delay = 0.0 # Vitesse Turbo d'entraînement
+        delay = 0.0         # Vitesse Turbo d'entraînement
 
 # --- CONTRÔLES CLAVIER ---
 wn.listen()
@@ -188,7 +245,7 @@ wn.onkeypress(go_up, "Up")
 wn.onkeypress(go_down, "Down")
 wn.onkeypress(go_left, "Left")
 wn.onkeypress(go_right, "Right")
-wn.onkeypress(toggle_speed, "space") # La touche Espace est maintenant liée !
+wn.onkeypress(toggle_speed, "space")
 
 # --- FONCTION GRAPHIQUE ---
 def update_plot(current_score, generation):
@@ -203,21 +260,22 @@ def update_plot(current_score, generation):
     plot_mean_scores.append(mean_score)
     
     plt.clf()
-    plt.title('Progression de l\'IA Q-Learning')
-    plt.xlabel('Nombre d\'évolutions (Parties)')
-    plt.ylabel('Score')
+    plt.title("Progression de l'IA Q-Learning (Pomme mobile)" if POMME_MOBILE else "Progression de l'IA Q-Learning")
+    plt.xlabel("Nombre d'évolutions (Parties)")
+    plt.ylabel("Score")
     
-    plt.plot(plot_scores, label='Score de la partie', color='#a2d149')
-    plt.plot(plot_mean_scores, label='Score moyen', color='#388a34', linewidth=2)
+    plt.plot(plot_scores, label="Score de la partie", color="#a2d149")
+    plt.plot(plot_mean_scores, label="Score moyen", color="#388a34", linewidth=2)
     
     plt.legend()
     plt.pause(0.001)
 
 # --- RÉINITIALISATION ---
 def reset_game():
-    global score, delay
+    global score, delay, step_counter
     head.goto(0, 0)
     head.direction = "stop"
+    step_counter = 0
     
     for segment in segments:
         segment.goto(1000, 1000)
@@ -232,14 +290,13 @@ def reset_game():
         seg.goto(0, -20 * (len(segments) + 1))
         segments.append(seg)
         
-    # Nouveau terrain : on regénère des obstacles aléatoires
+    # Nouveau terrain : on regénère des obstacles aléatoires et on replace la pomme
     place_obstacles()
+    spawn_food()
     
     score = 0
-    # Si un humain joue, on remet le delay à 0.1 pour réinitialiser la difficulté
     if not ACTIVER_IA:
-        delay = 0.1 
-    # (Si l'IA joue, on ne touche pas au 'delay' pour conserver le choix du Turbo ou non)
+        delay = 0.1
     
     update_score()
 
@@ -249,31 +306,36 @@ while True:
     
     # 1. État avant le mouvement (Pour l'IA)
     state = None
+    action = None
     if ACTIVER_IA:
         state = agent.get_state(head, food, segments, head.direction, obstacles)
         action = agent.get_action(state)
-        # L'IA donne une action, on empêche le demi-tour immédiat
         if action == "up" and head.direction != "down": head.direction = "up"
         if action == "down" and head.direction != "up": head.direction = "down"
         if action == "left" and head.direction != "right": head.direction = "left"
         if action == "right" and head.direction != "left": head.direction = "right"
 
     # Déplacer le corps
-    for index in range(len(segments)-1, 0, -1):
-        x = segments[index-1].xcor()
-        y = segments[index-1].ycor()
+    for index in range(len(segments) - 1, 0, -1):
+        x = segments[index - 1].xcor()
+        y = segments[index - 1].ycor()
         segments[index].goto(x, y)
     if len(segments) > 0:
         x = head.xcor()
         y = head.ycor()
         segments[0].goto(x, y)
 
-    # --- ON MESURE LA DISTANCE AVANT DE BOUGER ---
+    # Distance avant mouvement
     old_distance = head.distance(food)
 
     move()
+    step_counter += 1
+
+    # Déplacement périodique de la pomme (si la partie est active)
+    if POMME_MOBILE and head.direction != "stop" and step_counter % FREQUENCE_POMME == 0:
+        move_food()
     
-    # --- ON MESURE LA DISTANCE APRES AVOIR BOUGÉ ---
+    # Distance après mouvement (du serpent et éventuellement de la pomme)
     new_distance = head.distance(food)
     
     # Évaluation pour l'IA
@@ -287,29 +349,23 @@ while True:
     # Collision avec les murs
     if head.xcor() > 280 or head.xcor() < -280 or head.ycor() > 280 or head.ycor() < -280:
         game_over = True
-        reward = -10  # Grosse punition pour la mort
+        reward = -10
 
     # Collision avec le corps
     for segment in segments:
         if segment.distance(head) < 10:
             game_over = True
-            reward = -10  # Grosse punition pour la mort
+            reward = -10
 
     # Collision avec un obstacle
     for (ox, oy) in obstacles:
         if head.distance(ox, oy) < 15:
             game_over = True
-            reward = -10  # Grosse punition pour la mort
+            reward = -10
 
-    # Manger la pomme
-    if head.distance(food) < 15:
-        # Apparition de la pomme sur un multiple de 20, jamais sur un obstacle
-        while True:
-            x = random.randrange(-280, 281, 20)
-            y = random.randrange(-280, 281, 20)
-            if (x, y) not in obstacles:
-                break
-        food.goto(x, y)
+    # Manger la pomme (testé après les mouvements du serpent et de la pomme)
+    if not game_over and head.distance(food) < 15:
+        spawn_food()
         
         new_segment = turtle.Turtle()
         new_segment.speed(0)
@@ -318,8 +374,9 @@ while True:
         new_segment.penup()
         segments.append(new_segment)
         
-        score += 10
-        reward = 10  # Grosse récompense pour avoir mangé
+        bonus = 15 if POMME_MOBILE else 10
+        score += bonus
+        reward = bonus  # Récompense accrue pour une pomme mobile (+15)
         if score > high_score:
             high_score = score
             with open("highscore.txt", "w") as f:
@@ -336,10 +393,10 @@ while True:
         if ACTIVER_IA:
             update_plot(score, agent.generations)
         else:
-            time.sleep(1) # Pause si le joueur humain meurt
+            time.sleep(1)
         reset_game()
 
-    # Pause pour régler la vitesse visuelle (IA ou Humain)
+    # Pause pour régler la vitesse visuelle
     if delay > 0:
         time.sleep(delay)
 
