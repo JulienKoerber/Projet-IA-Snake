@@ -13,8 +13,7 @@ class QLearningAgent:
         self.load_model()
 
     def get_state(self, head, food, segments, direction, obstacles=()):
-        hx, hy = round(head.xcor()), round(head.ycor())
-        fx, fy = round(food.xcor()), round(food.ycor())
+        hx, hy = head.xcor(), head.ycor()
         
         # Coordonnées des cases adjacentes
         point_l = (hx - 20, hy)
@@ -27,7 +26,7 @@ class QLearningAgent:
         dir_u = direction == "up"
         dir_d = direction == "down"
 
-        # Fonction pour vérifier si une case spécifique est un mur, le corps ou un obstacle
+        # Fonction pour vérifier si une case spécifique est un mur ou le corps
         def is_collision(pt):
             x, y = pt
             if x > 280 or x < -280 or y > 280 or y < -280:
@@ -55,7 +54,7 @@ class QLearningAgent:
                       (dir_r and is_collision(point_u)) or \
                       (dir_l and is_collision(point_d))
 
-        # État à 11 critères (dangers relatifs, direction courante, position relative de la pomme)
+        # Nouvel état beaucoup plus précis (11 critères au lieu de 9)
         state = (
             danger_straight,
             danger_right,
@@ -64,25 +63,109 @@ class QLearningAgent:
             dir_r,
             dir_u,
             dir_d,
-            fx < hx,  # Nourriture à gauche
-            fx > hx,  # Nourriture à droite
-            fy > hy,  # Nourriture en haut
-            fy < hy   # Nourriture en bas
+            food.xcor() < hx,  # Nourriture à gauche
+            food.xcor() > hx,  # Nourriture à droite
+            food.ycor() > hy,  # Nourriture en haut
+            food.ycor() < hy   # Nourriture en bas
         )
         return state
 
-    def get_action(self, state):
-        actions = ["up", "down", "left", "right"]
-        # Exploration décroissante au fil des générations
+    def get_safe_actions(self, head, segments, direction, obstacles=()):
+        hx, hy = head.xcor(), head.ycor()
+        moves = {
+            "up": (hx, hy + 20),
+            "down": (hx, hy - 20),
+            "left": (hx - 20, hy),
+            "right": (hx + 20, hy)
+        }
+        opposites = {"up": "down", "down": "up", "left": "right", "right": "left"}
+        valid_moves = {a: pt for a, pt in moves.items() if direction == "stop" or a != opposites.get(direction)}
+
+        # 1. Vérification des collisions immédiates (murs et corps sans la queue qui avance)
+        # Remarque : le dernier segment de queue libère sa case au prochain coup
+        tail_pt = (segments[-1].xcor(), segments[-1].ycor()) if segments else None
+        body_obstacles = set(obstacles)
+        for idx, seg in enumerate(segments):
+            # Le dernier segment avance, sauf s'il n'y a qu'un segment
+            if idx < len(segments) - 1:
+                body_obstacles.add((seg.xcor(), seg.ycor()))
+
+        def is_collision(pt):
+            x, y = pt
+            if x > 280 or x < -280 or y > 280 or y < -280:
+                return True
+            return pt in body_obstacles
+
+        non_colliding = {a: pt for a, pt in valid_moves.items() if not is_collision(pt)}
+        if not non_colliding:
+            return list(valid_moves.keys())
+
+        # 2. Test du chemin vers la queue (Tail-Safety)
+        # Si le serpent est assez long (> 10 segments), la règle d'or pour dépasser 1000+ points
+        # est de s'assurer qu'il existe toujours un chemin libre pour rejoindre sa propre queue.
+        def has_path_to_tail(start_pt):
+            if not tail_pt:
+                return True
+            queue = [start_pt]
+            visited = {start_pt}
+            while queue:
+                cx, cy = queue.pop(0)
+                if (cx, cy) == tail_pt:
+                    return True
+                for nx, ny in [(cx + 20, cy), (cx - 20, cy), (cx, cy + 20), (cx, cy - 20)]:
+                    npt = (nx, ny)
+                    if -280 <= nx <= 280 and -280 <= ny <= 280:
+                        if npt not in visited and npt not in body_obstacles:
+                            visited.add(npt)
+                            queue.append(npt)
+            return False
+
+        tail_safe_moves = [a for a, pt in non_colliding.items() if has_path_to_tail(pt)]
+        candidate_pool = tail_safe_moves if tail_safe_moves else list(non_colliding.keys())
+
+        # 3. Flood Fill / BFS pour évaluer l'espace disponible
+        max_depth = max(len(segments) + 10, 40)
+        action_spaces = {}
+        for a in candidate_pool:
+            start_pt = non_colliding[a]
+            visited = {start_pt}
+            queue = [start_pt]
+            count = 0
+            while queue and count < max_depth:
+                cx, cy = queue.pop(0)
+                count += 1
+                for nx, ny in [(cx + 20, cy), (cx - 20, cy), (cx, cy + 20), (cx, cy - 20)]:
+                    npt = (nx, ny)
+                    if -280 <= nx <= 280 and -280 <= ny <= 280:
+                        if npt not in visited and npt not in body_obstacles:
+                            visited.add(npt)
+                            queue.append(npt)
+            action_spaces[a] = count
+
+        # Actions ayant assez d'espace pour le serpent
+        safe_actions = [a for a, sp in action_spaces.items() if sp >= len(segments)]
+        if safe_actions:
+            return safe_actions
+
+        max_sp = max(action_spaces.values())
+        return [a for a, sp in action_spaces.items() if sp == max_sp]
+
+    def get_action(self, state, head=None, segments=None, direction=None, obstacles=()):
+        if head is not None and segments is not None and direction is not None:
+            actions = self.get_safe_actions(head, segments, direction, obstacles)
+        else:
+            actions = ["up", "down", "left", "right"]
+
+        # Plus elle fait de parties, moins elle joue au hasard (Exploration décroissante)
         current_epsilon = max(0.01, self.epsilon - (self.generations * 0.001))
         
         if random.uniform(0, 1) < current_epsilon:
             return random.choice(actions)
         
         if state not in self.q_table:
-            self.q_table[state] = {a: 0.0 for a in actions}
+            self.q_table[state] = {a: 0.0 for a in ["up", "down", "left", "right"]}
         
-        return max(self.q_table[state], key=self.q_table[state].get)
+        return max(actions, key=lambda a: self.q_table[state].get(a, 0.0))
 
     def train(self, state, action, reward, next_state, game_over):
         if state not in self.q_table:
@@ -113,5 +196,5 @@ class QLearningAgent:
                 self.generations = data.get("generations", 0)
                 try:
                     self.q_table = {ast.literal_eval(k): v for k, v in data.get("q_table", {}).items()}
-                except Exception:
+                except (ValueError, SyntaxError):
                     self.q_table = {}

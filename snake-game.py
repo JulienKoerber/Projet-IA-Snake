@@ -10,7 +10,7 @@ from q_learning import QLearningAgent
 # --- PARAMÈTRES ---
 ACTIVER_IA = True     # Mets sur False pour jouer toi-même au clavier
 VITESSE_IA = 0.05     # Vitesse d'observation. Appuie sur ESPACE en jeu pour passer à 0.0 (Vitesse max)
-RESET_IA = True       # True = Efface la mémoire et remet les évolutions à 0 au démarrage
+RESET_IA = False      # True = Efface la mémoire et remet les évolutions à 0 au démarrage
 NB_OBSTACLES = 10     # Nombre d'obstacles aléatoires à chaque nouvelle partie
 POMME_MOBILE = True   # True = La pomme se déplace et tente d'esquiver le serpent
 FREQUENCE_POMME = 4   # La pomme bouge tous les N déplacements du serpent
@@ -309,7 +309,7 @@ while True:
     action = None
     if ACTIVER_IA:
         state = agent.get_state(head, food, segments, head.direction, obstacles)
-        action = agent.get_action(state)
+        action = agent.get_action(state, head, segments, head.direction, obstacles)
         if action == "up" and head.direction != "down": head.direction = "up"
         if action == "down" and head.direction != "up": head.direction = "down"
         if action == "left" and head.direction != "right": head.direction = "left"
@@ -338,30 +338,30 @@ while True:
     # Distance après mouvement (du serpent et éventuellement de la pomme)
     new_distance = head.distance(food)
     
-    # Évaluation pour l'IA
+    # Évaluation pour l'IA (Récompenses équilibrées)
     if new_distance < old_distance:
-        reward = 1    # Récompense : On se rapproche de la pomme !
+        reward = 1.5   # Récompense : On se rapproche de la pomme !
     else:
-        reward = -2   # Punition : On s'éloigne ou on tourne en rond !
+        reward = -0.5  # Légère pénalité : autorise les détours sans suicider le serpent
         
     game_over = False
 
     # Collision avec les murs
     if head.xcor() > 280 or head.xcor() < -280 or head.ycor() > 280 or head.ycor() < -280:
         game_over = True
-        reward = -10
+        reward = -15  # Punition pour la mort
 
     # Collision avec le corps
     for segment in segments:
         if segment.distance(head) < 10:
             game_over = True
-            reward = -10
+            reward = -15  # Punition pour la mort
 
     # Collision avec un obstacle
     for (ox, oy) in obstacles:
         if head.distance(ox, oy) < 15:
             game_over = True
-            reward = -10
+            reward = -15
 
     # Manger la pomme (testé après les mouvements du serpent et de la pomme)
     if not game_over and head.distance(food) < 15:

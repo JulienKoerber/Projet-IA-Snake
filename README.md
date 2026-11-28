@@ -1,86 +1,194 @@
-# Projet-IA-Snake
+# 🐍 Projet IA Snake - Apprentissage par Renforcement (Q-Learning)
 
-Projet d'implémentation d'une intelligence artificielle dans un moteur de jeu Snake.
+Projet d'implémentation et de visualisation d'un agent intelligent autonome jouant au jeu classique **Snake**, basé sur l'algorithme d'apprentissage par renforcement **Q-Learning** (évaluation de Bellman et politique $\varepsilon$-greedy).
 
-Un jeu classique de Snake développé en Python (avec `turtle`) intégrant une Intelligence Artificielle basée sur l'algorithme d'apprentissage par renforcement **Q-Learning**. L'IA apprend à jouer toute seule, en temps réel, et ses performances sont affichées sur un graphique dynamique.
+Ce projet a été adapté pour fonctionner **aussi bien en local qu'en application web HTTP (Flask)** prête à être déployée sur **PythonAnywhere**.
 
-## Fonctionnalités
+---
 
-* **Mode IA / Joueur :** Laissez l'IA s'entraîner ou reprenez le contrôle pour jouer vous-même.
+## 📋 Résumé des Travaux Réalisés (Architecture Option B)
 
-* **Graphique d'apprentissage en direct :** Suivez la progression de l'IA (score par partie et moyenne) grâce à `matplotlib`.
+Dans la version initiale, le jeu reposait sur les modules de bureau `turtle` (Tkinter) et `matplotlib.pyplot` en mode interactif. Ces modules sont incompatibles avec les serveurs web distants (environnements *headless* sans écran X11).
 
-* **Mode Turbo :** Accélérez l'entraînement de l'IA instantanément en appuyant sur `ESPACE`.
+Pour répondre au besoin d'un déploiement HTTP sur **PythonAnywhere**, l'**Option B** a été implémentée avec succès :
 
-* **Sauvegarde automatique :** L'IA sauvegarde son "cerveau" (Q-table) dans un fichier JSON pour ne pas perdre sa progression, ainsi que le meilleur score (High Score).
+1. **Backend Web Flask (`app.py` & `wsgi.py`) :**
+   - Serveur léger en Python fournissant l'interface web et les routes d'API REST.
+   - `/api/model` (GET / POST) : Chargement et synchronisation de la table Q (`q_model.json`).
+   - `/api/model/reset` (POST) : Remise à zéro de la mémoire de l'IA.
+   - `/api/highscore` (GET / POST) : Récupération et mise à jour persistante du meilleur score (`highscore.txt`).
+   - Configuration WSGI standard prête pour PythonAnywhere.
 
-* **Système de Récompenses optimisé :** L'agent est récompensé s'il se rapproche de la pomme et puni s'il s'en éloigne ou heurte un mur.
+2. **Frontend & Inférence Client-Side (`static/` & `templates/`) :**
+   - **Moteur de jeu Canvas HTML5 :** Réplique exacte du damier bicolore vert (`#aad751` & `#a2d149`), des dimensions (600x600, pas de 20px) et des animations du Snake d'origine.
+   - **Inférence IA en JavaScript (`q_learning.js`) :** L'agent évalue l'état et consulte la Q-table directement dans le navigateur du client.
+     - **Avantages majeurs :** 60 FPS garantis, zéro latence réseau pour chaque déplacement, et **aucune consommation excessive du quota CPU journalier** (100s/jour) sur le compte gratuit PythonAnywhere.
+   - **Graphique de progression en direct (Chart.js) :** Remplace `matplotlib` et affiche en temps réel l'évolution du score par partie ainsi que la moyenne glissante au fil des générations.
+   - **Terrain configurable :** pomme mobile qui esquive le serpent et obstacles aléatoires, activables séparément depuis l'interface web. L'IA tient compte des obstacles dans ses états et ses actions sécurisées.
+   - **Contrôles complets :** Modes IA ou Humain (clavier ZQSD / Flèches ou pavé tactile), vitesses Lente, Normale et Turbo (<kbd>Espace</kbd>), bouton pause (<kbd>P</kbd>), sauvegarde et réinitialisation.
 
-* **Profiler mémoire intégré :** Suivi en direct de l'allocation mémoire de l'application via `tracemalloc`.
+3. **Entraînement Intensif Headless en Python (`headless_train.py`) :**
+   - Script autonome sans interface graphique permettant d'entraîner l'agent à la vitesse maximale du CPU en local pour peupler `q_model.json` avant déploiement.
 
-## Prérequis et Installation
+---
 
-Assurez-vous d'avoir Python installé sur votre machine. Le module `turtle` est inclus par défaut dans Python. Vous aurez seulement besoin d'installer `matplotlib` pour l'affichage du graphique.
+## 🧠 Modélisation de l'IA (Q-Learning)
 
-1. Clonez ce dépôt ou téléchargez les fichiers.
+L'agent apprend par essais-erreurs à maximiser ses récompenses cumulées.
 
-2. Installez les dépendances nécessaires :
+### 1. Espace d'États (11 critères booléens)
+L'état $s$ est un tuple de 11 booléens :
+* **Dangers immédiats (relatifs à la tête et à sa direction) :**
+  1. Danger tout droit (mur ou corps)
+  2. Danger à droite
+  3. Danger à gauche
+* **Direction actuelle du serpent :**
+  4. Vers la gauche
+  5. Vers la droite
+  6. Vers le haut
+  7. Vers le bas
+* **Position relative de la nourriture (pomme) :**
+  8. Nourriture à gauche de la tête
+  9. Nourriture à droite de la tête
+  10. Nourriture au-dessus de la tête
+  11. Nourriture en-dessous de la tête
 
-   ```
-   pip install matplotlib
-   
-   ```
+### 2. Actions & Masquage Sécurisé (Action Masking)
+À chaque case, 4 actions discrètes sont possibles :
+$$\mathcal{A} = \{\text{"up"}, \text{"down"}, \text{"left"}, \text{"right"}\}$$
+* **Filtrage des demi-tours à 180°**.
+* **Action Masking + Flood Fill (BFS) :** L'agent élimine les mouvements suicidaires (murs, corps) et évalue la surface accessible dans chaque direction. Si une issue mène à un cul-de-sac plus petit que la longueur du serpent, elle est disqualifiée pour éviter les auto-enfermements.
+* La table Q choisit la meilleure action parmi les directions spatialement viables.
 
-## Utilisation
+### 3. Fonction de Récompense (Reward Shaping)
+* Se rapproche de la pomme : **+1.5**
+* S'éloigne de la pomme : **-0.5** *(pénalité adoucie pour autoriser les détours stratégiques de survie)*
+* Mange la pomme : **+15**
+* Collision (mort contre mur ou propre corps) : **-15**
 
-Lancez le jeu avec `python snake-game.py`. Le panneau « Profiler mémoire Snake » affiche en direct la mémoire Python encore occupée, regroupée par fonction, ainsi que le nombre de blocs et le pic mémoire observé. Il s'actualise chaque seconde.
+### 4. Mise à jour de Bellman
+$$Q(s, a) \leftarrow (1 - \alpha) Q(s, a) + \alpha \left[ r + \gamma \max_{a'} Q(s', a') \right]$$
+* Taux d'apprentissage ($\alpha$) = `0.1`
+* Facteur d'actualisation ($\gamma$) = `0.9`
+* Taux d'exploration ($\varepsilon$) : Débute à `0.1` et décroît de `0.001` par génération jusqu'à un minimum de `0.01` ($\varepsilon$-greedy).
 
-Appuyez sur **P** pour masquer ou réafficher le panneau. Le profiler utilise `tracemalloc` : il mesure les allocations Python toujours vivantes (et non le cumul des allocations déjà libérées).
+---
 
-## Configuration (Paramètres)
+## 📁 Arborescence du Projet
 
-En haut du fichier `snake-game.py`, vous pouvez modifier trois paramètres principaux pour changer le comportement du programme :
-
+```text
+Projet-IA-Snake/
+│
+├── app.py                 # Serveur web Flask (API REST & routes)
+├── wsgi.py                # Point d'entrée WSGI pour PythonAnywhere
+├── requirements.txt       # Dépendances Python (Flask, gunicorn)
+│
+├── headless_train.py      # Entraîneur CPU ultra-rapide sans interface
+├── q_learning.py          # Agent Q-learning d'origine en Python
+├── snake-game.py          # Version d'origine de bureau avec Turtle
+│
+├── q_model.json           # Modèle sauvegardé (générations et Q-table)
+├── highscore.txt          # Persistance du meilleur score
+│
+├── static/
+│   ├── css/
+│   │   └── style.css      # Feuille de styles personnalisée et responsive
+│   └── js/
+│       ├── q_learning.js  # Agent Q-learning en JavaScript (même logique)
+│       └── game.js        # Moteur de jeu Canvas, Chart.js et contrôles
+│
+├── templates/
+│   └── index.html         # Page web principale (Bootstrap 5, Chart.js)
+│
+└── README.md              # Documentation du projet
 ```
-ACTIVER_IA = True  # Mettre sur False pour jouer au clavier
-VITESSE_IA = 0.05  # Vitesse d'observation du jeu
-RESET_IA = True    # Mettre sur True pour effacer la mémoire au démarrage
 
+---
+
+## 🚀 Utilisation en Local
+
+### 1. Installation des dépendances
+Dans un terminal ou invite de commande :
+```bash
+pip install -r requirements.txt
 ```
 
-## Contrôles du Jeu
+### 2. Lancer l'application Web Flask
+```bash
+python app.py
+```
+Ouvre ensuite ton navigateur à l'adresse : **[http://127.0.0.1:5000](http://127.0.0.1:5000)**
 
-### Contrôle Général
-* **[ P ]** : Masquer ou réafficher le panneau du profiler mémoire.
+### 3. Entraîner l'IA rapidement en ligne de commande (optionnel)
+Pour ajouter 200 parties d'entraînement en quelques secondes :
+```bash
+python headless_train.py --episodes 200
+```
 
-### Mode IA (`ACTIVER_IA = True`)
+### 4. Lancer la version classique avec Turtle (version locale historique)
+```bash
+python snake-game.py
+```
 
-* **[ ESPACE ]** : Bascule entre la vitesse d'observation (`VITESSE_IA`) et la vitesse maximale (Turbo) pour accélérer l'entraînement de l'IA.
+La version de bureau conserve également la pomme mobile et esquiveuse, les obstacles aléatoires et l'agent Q-Learning avec filtrage des actions dangereuses. Utilise **WASD** ou les **flèches** pour jouer en mode humain, et **Espace** pour activer/désactiver le mode Turbo de l'IA. Les options `POMME_MOBILE`, `NB_OBSTACLES`, `ACTIVER_IA` et `RESET_IA` se règlent en haut de `snake-game.py`. Par défaut, `RESET_IA` est désactivé afin de conserver le modèle entraîné ; active-le seulement pour repartir de zéro.
 
-### Mode Humain (`ACTIVER_IA = False`)
+Dans la version web, les options **Pomme mobile et esquiveuse** et **Obstacles aléatoires** se règlent dans le panneau « Éléments du terrain ». Le curseur permet de choisir de 0 à 20 obstacles.
 
-* **[ Z, Q, S, D ]** ou **[ Flèches directionnelles ]** : Déplacer le serpent.
+---
 
-## Comment l'IA apprend-elle ? (Q-Learning)
+## 🌐 Déploiement sur PythonAnywhere (Étape par Étape)
 
-L'IA analyse son environnement et prend des décisions basées sur un système de récompenses et de punitions (Reward System) défini dans la boucle du jeu :
+Le projet a été spécialement configuré pour être mis en ligne sur **[PythonAnywhere](https://www.pythonanywhere.com/)** en quelques minutes.
 
-* **+10** : Le serpent mange la pomme (Objectif principal).
+### Étape 1 : Créer un compte
+1. Inscris-toi gratuitement sur **PythonAnywhere** (choisis le plan gratuit *Beginner*).
+2. Ton site aura pour URL : `https://<ton-nom-d-utilisateur>.pythonanywhere.com`.
 
-* **+1** : Le serpent effectue un mouvement qui le **rapproche** de la pomme.
+### Étape 2 : Importer le projet
+1. Ouvre l'onglet **Consoles** puis lance une console **Bash**.
+2. Clone ton dépôt Git (ou décompresse l'archive du projet) :
+   ```bash
+   git clone https://github.com/ton-repo/Projet-IA-Snake.git
+   cd Projet-IA-Snake
+   ```
 
-* **-2** : Le serpent effectue un mouvement qui l'**éloigne** de la pomme (évite qu'il ne tourne en rond indéfiniment).
+### Étape 3 : Créer un environnement virtuel
+Dans la console Bash PythonAnywhere :
+```bash
+mkvirtualenv --python=python3.10 snake-env
+pip install -r requirements.txt
+```
 
-* **-10** : Le serpent meurt (Touche un mur ou son propre corps).
+### Étape 4 : Configurer l'application Web
+1. Rends-toi dans l'onglet **Web** du tableau de bord PythonAnywhere.
+2. Clique sur **"Add a new web app"**.
+3. Choisis **"Manual configuration"** puis **Python 3.10**.
 
-À chaque action, l'IA met à jour sa **Q-table** (sauvegardée dans `q_model.json`), ajustant les probabilités de prendre une direction spécifique selon l'état actuel de son environnement (dangers autour, position de la pomme). Plus elle joue de générations, moins elle explore au hasard et plus elle exploite ses connaissances.
+### Étape 5 : Configurer le fichier WSGI
+1. Toujours dans l'onglet **Web**, clique sur le lien du fichier **"WSGI configuration file"** (ex: `/var/www/<ton-utilisateur>_pythonanywhere_com_wsgi.py`).
+2. Supprime tout le contenu généré par défaut et remplace-le par :
+   ```python
+   import sys
+   import os
 
-## Structure des fichiers
+   # Chemin absolu vers ton projet
+   project_home = '/home/<ton-nom-d-utilisateur>/Projet-IA-Snake'
+   if project_home not in sys.path:
+       sys.path.insert(0, project_home)
 
-* `snake-game.py` : Script principal gérant le jeu (interface graphique, boucle principale, calcul des récompenses, affichage du profiler).
+   # Import de l'application Flask
+   from app import app as application
+   ```
+3. Sauvegarde le fichier en haut à droite.
 
-* `q_learning.py` : (Requis) Contient la classe `QLearningAgent` définissant la logique du cerveau de l'IA.
+### Étape 6 : Renseigner le Virtualenv et les Fichiers Statiques
+1. Dans la section **Virtualenv**, entre le chemin :
+   `/home/<ton-nom-d-utilisateur>/.virtualenvs/snake-env`
+2. Dans la section **Static files** :
+   - **URL** : `/static/`
+   - **Directory** : `/home/<ton-nom-d-utilisateur>/Projet-IA-Snake/static`
 
-* `q_model.json` : Fichier généré automatiquement qui stocke la mémoire (Q-table) de l'IA.
+### Étape 7 : Recharger l'application
+Clique sur le gros bouton vert **"Reload <ton-nom-d-utilisateur>.pythonanywhere.com"** !
 
-* `highscore.txt` : Fichier généré automatiquement pour sauvegarder le record du jeu.
+Ton projet est maintenant accessible en ligne 24h/24 par tout le monde ! 🎉
